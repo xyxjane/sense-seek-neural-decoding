@@ -1,0 +1,41 @@
+# ── raw data & generated datasets ────────────────────────────────────────────
+data/
+dataset/
+test_output/
+raw_data/
+
+# large binary files (safety net)
+*.h5
+*.edf
+*.pkl
+*.csv
+*.xlsx
+
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+
+# ── environments ──────────────────────────────────────────────────────────────
+.env
+.venv
+venv/
+env/
+*.env
+
+# ── OS ────────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── editors ───────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
