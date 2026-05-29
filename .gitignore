@@ -3,6 +3,7 @@ data/
 dataset/
 test_output/
 raw_data/
+SenseSeek-Dataset-code/
 
 # large binary files (safety net)
 *.h5
