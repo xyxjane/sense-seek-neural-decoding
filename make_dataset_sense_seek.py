@@ -195,10 +195,93 @@ def download_dataset(local_root: Path, dry_run: bool = False,
 
 # ── EEG processing helpers ────────────────────────────────────────────────────
 
-def load_and_preprocess_eeg(edf_path: Path) -> tuple:
+def clean_eeg_with_ica_iclabel(
+    raw: mne.io.BaseRaw,
+    random_state: int = 42,
+    artifact_labels: tuple = ("eye blink", "muscle artifact", "heart beat",
+                              "line noise", "channel noise"),
+    min_artifact_prob: float = 0.80,
+    max_components_to_remove: int = 5,
+) -> mne.io.BaseRaw:
+    """
+    Clean EEG using ICA + ICLabel.
+
+    Requires mne-icalabel (pip install mne-icalabel).  Called after channel
+    selection, common-average reference, and bandpass filtering.
+
+    Parameters
+    ----------
+    raw:
+        MNE Raw object after EEG channel selection, CAR, and bandpass.
+    random_state:
+        Reproducibility seed.
+    artifact_labels:
+        ICLabel classes to remove.
+    min_artifact_prob:
+        Remove a component only if ICLabel confidence is >= this threshold.
+    max_components_to_remove:
+        Safety cap to avoid removing too many ICA components.
+
+    Returns
+    -------
+    raw_clean : cleaned MNE Raw object (copy of input).
+    """
+    try:
+        from mne.preprocessing import ICA
+        from mne_icalabel import label_components
+    except ImportError as exc:
+        raise ImportError(
+            "mne-icalabel is required for ICA cleaning: "
+            "pip install mne-icalabel"
+        ) from exc
+
+    raw_clean = raw.copy()
+
+    n_eeg_ch = len(mne.pick_types(raw_clean.info, eeg=True, meg=False, exclude="bads"))
+    if n_eeg_ch < 3:
+        print("  [warn] Too few EEG channels for ICA; skipping ICA/ICLabel.")
+        return raw_clean
+
+    n_components = min(n_eeg_ch - 1, 20)
+
+    ica = ICA(
+        n_components=n_components,
+        method="infomax",
+        fit_params=dict(extended=True),
+        random_state=random_state,
+        max_iter="auto",
+    )
+    ica.fit(raw_clean, verbose=False)
+
+    ic_labels = label_components(raw_clean, ica, method="iclabel")
+    labels_ic  = ic_labels["labels"]
+    probs      = ic_labels["y_pred_proba"]
+
+    exclude = [
+        idx for idx, (lbl, prob) in enumerate(zip(labels_ic, probs))
+        if lbl in artifact_labels and prob >= min_artifact_prob
+    ][:max_components_to_remove]
+
+    print("  ICA/ICLabel component labels:")
+    for i, (lbl, prob) in enumerate(zip(labels_ic, probs)):
+        flag = "REMOVE" if i in exclude else "keep"
+        print(f"    IC {i:02d}: {lbl:20s} prob={prob:.3f}  {flag}")
+
+    if not exclude:
+        print("  No ICA components removed.")
+        return raw_clean
+
+    ica.exclude = exclude
+    raw_clean   = ica.apply(raw_clean, verbose=False)
+    print(f"  Removed ICA components: {exclude}")
+    return raw_clean
+
+
+def load_and_preprocess_eeg(edf_path: Path, use_ica: bool = False) -> tuple:
     """
     Load EDF, pick EEG channels, apply common-average reference,
     bandpass 1–40 Hz, resample to SFREQ_TARGET.
+    Optionally run ICA + ICLabel artefact removal (use_ica=True).
 
     Returns (data: float32 (C, T), sfreq, ch_names, meas_date_unix)
     meas_date_unix is the recording start as a unix timestamp (None if not set).
@@ -223,6 +306,9 @@ def load_and_preprocess_eeg(edf_path: Path) -> tuple:
 
     if abs(raw.info['sfreq'] - SFREQ_TARGET) > 0.5:
         raw.resample(SFREQ_TARGET, verbose=False)
+
+    if use_ica:
+        raw = clean_eeg_with_ica_iclabel(raw)
 
     meas_date = raw.info.get('meas_date')
     meas_date_unix = meas_date.timestamp() if meas_date is not None else None
@@ -480,7 +566,8 @@ def _collect_common_channels(edf_files: list, events_dir: Path) -> list:
 
 def build_dataset(raw_dir: Path, output_dir: Path,
                   window_sec: float = WINDOW_SEC,
-                  window_stride: float = WINDOW_STRIDE) -> None:
+                  window_stride: float = WINDOW_STRIDE,
+                  use_ica: bool = False) -> None:
     """
     Build two non-sequentially accessible on-disk arrays in a single HDF5 file
     (dataset/dataset.h5):
@@ -590,7 +677,7 @@ def build_dataset(raw_dir: Path, output_dir: Path,
                 continue
 
             print(f"\n── {pid} ──")
-            eeg, sfreq, ch_names, meas_date_unix = load_and_preprocess_eeg(edf_path)
+            eeg, sfreq, ch_names, meas_date_unix = load_and_preprocess_eeg(edf_path, use_ica=use_ica)
             assert abs(sfreq - SFREQ_TARGET) < 0.5, (
                 f"{pid}: expected sfreq={SFREQ_TARGET} after resampling, got {sfreq}"
             )
@@ -715,6 +802,8 @@ if __name__ == "__main__":
                     help=f"Window length in seconds (default: {WINDOW_SEC}).")
     pr.add_argument("--window-stride", type=float, default=WINDOW_STRIDE,
                     help=f"Window stride in seconds (default: {WINDOW_STRIDE}).")
+    pr.add_argument("--ica", action="store_true",
+                    help="Run ICA + ICLabel artefact removal (requires mne-icalabel).")
 
     # ── all-in-one sub-command ──
     ac = subparsers.add_parser("all", help="Download then process in one step.")
@@ -727,6 +816,8 @@ if __name__ == "__main__":
                     help=f"Window length in seconds (default: {WINDOW_SEC}).")
     ac.add_argument("--window-stride", type=float, default=WINDOW_STRIDE,
                     help=f"Window stride in seconds (default: {WINDOW_STRIDE}).")
+    ac.add_argument("--ica", action="store_true",
+                    help="Run ICA + ICLabel artefact removal (requires mne-icalabel).")
 
     args = parser.parse_args()
 
@@ -739,14 +830,16 @@ if __name__ == "__main__":
 
     elif args.command == "process":
         build_dataset(raw_dir=args.raw_dir, output_dir=args.output_dir,
-                      window_sec=args.window_sec, window_stride=args.window_stride)
+                      window_sec=args.window_sec, window_stride=args.window_stride,
+                      use_ica=args.ica)
 
     elif args.command == "all":
         download_dataset(local_root=args.raw_dir, dry_run=args.dry_run,
                          eeg_only=args.eeg_only)
         if not args.dry_run:
             build_dataset(raw_dir=args.raw_dir, output_dir=args.output_dir,
-                          window_sec=args.window_sec, window_stride=args.window_stride)
+                          window_sec=args.window_sec, window_stride=args.window_stride,
+                          use_ica=args.ica)
 
     else:
         parser.print_help()

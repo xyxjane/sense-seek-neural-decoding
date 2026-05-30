@@ -80,8 +80,9 @@ Applied per participant inside `load_and_preprocess_eeg()`:
 5. Common-average reference (CAR)
 6. Bandpass filter  1–40 Hz  (IIR Butterworth)
 7. Resample to 256 Hz
-8. Slice into sliding windows (no cross-boundary padding)
-9. Per-participant, per-channel z-score normalisation over all windows
+8. *(Optional)* ICA + ICLabel artefact removal — `--ica` flag (`eye blink`, `muscle artifact`, `heart beat`, `line noise`, `channel noise` components removed when confidence ≥ 0.80, capped at 5 components)
+9. Slice into sliding windows (no cross-boundary padding)
+10. Per-participant, per-channel z-score normalisation over all windows
 
 ---
 
@@ -94,7 +95,7 @@ Applied per participant inside `load_and_preprocess_eeg()`:
 bash install_requirements.sh
 
 # Option B — manual
-pip install mne h5py numpy pandas openpyxl awscli
+pip install mne h5py numpy pandas openpyxl awscli mne-icalabel
 ```
 
 ### 1 — Download raw data from S3
@@ -194,6 +195,7 @@ python make_dataset_sense_seek.py all \
 | `--output-dir`    | all               | `dataset`   | Output directory for HDF5 + report |
 | `--window-sec`    | `process`, `all`  | `5.0`       | Window length in seconds           |
 | `--window-stride` | `process`, `all`  | `2.5`       | Stride in seconds (overlap = 1 − stride/window) |
+| `--ica`           | `process`, `all`  | off         | Run ICA + ICLabel artefact removal (requires `mne-icalabel`) |
 | `--eeg-only`      | `download`, `all` | off         | Download only EEG + event files (skip wristband, eye-tracker, screen) |
 | `--dry-run`       | `download`, `all` | off         | Show S3 operations without writing |
 | `--list-only`     | `download`        | off         | List all S3 objects and exit        |
