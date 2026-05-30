@@ -78,17 +78,21 @@ STAGE_TO_INT = {s: i for i, s in enumerate(STAGES)}
 
 # ── S3 manifest ───────────────────────────────────────────────────────────────
 
-# Raw inputs required for processing
-REQUIRED_PREFIXES = [
+# Folders always needed to build the EEG dataset
+EEG_PREFIXES = [
     "HEADSET/raw/EEG/",          # EDF recordings – primary model input
     "HEADSET/raw/EEG_config/",   # channel layout JSON files
     "HEADSET/processed/events/", # per-participant stage timing PKL files
+]
+
+# Additional multimodal folders (skip with --eeg-only)
+OPTIONAL_PREFIXES = [
     "TIME/",                     # cross-modal timestamp CSVs
-    "HEADSET/raw/head_motion/",  # optional auxiliary modality
-    "WRISTBAND/raw/ACC/",
-    "WRISTBAND/raw/EDA/",
-    "EYETRACKER/raw/EYE/",
-    "SCREEN/",
+    "HEADSET/raw/head_motion/",  # head motion auxiliary modality
+    "WRISTBAND/raw/ACC/",        # Empatica E4 accelerometer
+    "WRISTBAND/raw/EDA/",        # Empatica E4 electrodermal activity
+    "EYETRACKER/raw/EYE/",       # gaze data
+    "SCREEN/",                   # screen recordings
 ]
 
 REQUIRED_FILES = [
@@ -151,14 +155,26 @@ def _copy_file(key: str, local_root: Path, dry_run: bool = False) -> None:
     subprocess.run(cmd, check=True)
 
 
-def download_dataset(local_root: Path, dry_run: bool = False) -> None:
-    """Download all raw Sense-Seek data from s3://sense-seek-dataset/ into local_root."""
+def download_dataset(local_root: Path, dry_run: bool = False,
+                     eeg_only: bool = False) -> None:
+    """
+    Download raw Sense-Seek data from s3://sense-seek-dataset/ into local_root.
+
+    eeg_only=True  – download only EEG recordings + event PKLs (fastest; enough
+                     to build the HDF5 dataset).
+    eeg_only=False – also download wristband, eye-tracker, screen, and timing
+                     data (full multimodal archive, ~several GB extra).
+    """
     _check_aws_cli()
     local_root = Path(local_root)
     local_root.mkdir(parents=True, exist_ok=True)
 
+    prefixes = EEG_PREFIXES + ([] if eeg_only else OPTIONAL_PREFIXES)
+
     print("=== Downloading raw data folders ===")
-    for prefix in REQUIRED_PREFIXES:
+    if eeg_only:
+        print("  (--eeg-only: skipping wristband, eye-tracker, screen, and timing data)")
+    for prefix in prefixes:
         _sync_prefix(prefix, local_root, dry_run=dry_run)
 
     print("\n=== Downloading metadata files ===")
@@ -672,6 +688,8 @@ if __name__ == "__main__":
                     help="Show what would be downloaded without writing files.")
     dl.add_argument("--list-only", action="store_true",
                     help="List all S3 objects and exit.")
+    dl.add_argument("--eeg-only", action="store_true",
+                    help="Download only EEG + event files (skip wristband, eye-tracker, screen).")
 
     # ── process sub-command ──
     pr = subparsers.add_parser(
@@ -692,6 +710,8 @@ if __name__ == "__main__":
     ac.add_argument("--raw-dir",       default="raw_data")
     ac.add_argument("--output-dir",    default="dataset")
     ac.add_argument("--dry-run",       action="store_true")
+    ac.add_argument("--eeg-only", action="store_true",
+                    help="Download only EEG + event files (skip wristband, eye-tracker, screen).")
     ac.add_argument("--window-sec",    type=float, default=WINDOW_SEC,
                     help=f"Window length in seconds (default: {WINDOW_SEC}).")
     ac.add_argument("--window-stride", type=float, default=WINDOW_STRIDE,
@@ -703,14 +723,16 @@ if __name__ == "__main__":
         if args.list_only:
             print(list_s3_bucket(f"{BUCKET}/"))
         else:
-            download_dataset(local_root=args.output_dir, dry_run=args.dry_run)
+            download_dataset(local_root=args.output_dir, dry_run=args.dry_run,
+                             eeg_only=args.eeg_only)
 
     elif args.command == "process":
         build_dataset(raw_dir=args.raw_dir, output_dir=args.output_dir,
                       window_sec=args.window_sec, window_stride=args.window_stride)
 
     elif args.command == "all":
-        download_dataset(local_root=args.raw_dir, dry_run=args.dry_run)
+        download_dataset(local_root=args.raw_dir, dry_run=args.dry_run,
+                         eeg_only=args.eeg_only)
         if not args.dry_run:
             build_dataset(raw_dir=args.raw_dir, output_dir=args.output_dir,
                           window_sec=args.window_sec, window_stride=args.window_stride)
