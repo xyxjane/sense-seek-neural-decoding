@@ -26,6 +26,8 @@ Usage
       --output-dir runs/exp1
 """
 
+from __future__ import annotations
+
 import argparse
 import os
 import time
