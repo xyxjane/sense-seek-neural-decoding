@@ -85,16 +85,60 @@ Applied per participant inside `load_and_preprocess_eeg()`:
 
 ## Usage
 
+### Prerequisites
+
+```bash
+# Option A — install script (detects OS and shows AWS CLI install command)
+bash install_requirements.sh
+
+# Option B — manual
+pip install mne h5py numpy pandas openpyxl awscli
+```
+
 ### 1 — Download raw data from S3
+
+The dataset is hosted in a public S3 bucket (`s3://sense-seek-dataset/`). No AWS
+account is needed.
+
+**EEG only** (recommended — everything needed to build the HDF5 dataset, ~few GB):
+
+```bash
+python make_dataset_sense_seek.py download \
+    --output-dir data/raw \
+    --eeg-only
+```
+
+This downloads:
+
+| Folder / file | Contents |
+|---|---|
+| `HEADSET/raw/EEG/` | EDF recordings (primary model input) |
+| `HEADSET/raw/EEG_config/` | Channel layout JSON files |
+| `HEADSET/processed/events/` | Stage timing PKL files |
+| `task_materials.xlsx` | TREC topic ID → topic name mapping |
+| other metadata CSVs | Participant IDs, attention checks, ratings |
+
+**Full multimodal download** (also includes wristband, eye-tracker, screen, timing):
 
 ```bash
 python make_dataset_sense_seek.py download --output-dir data/raw
 ```
 
-Dry-run (show what would be downloaded):
+Additionally downloads:
+
+| Folder | Contents |
+|---|---|
+| `WRISTBAND/raw/ACC/` | Empatica E4 accelerometer (32 Hz) |
+| `WRISTBAND/raw/EDA/` | Empatica E4 electrodermal activity (4 Hz) |
+| `EYETRACKER/raw/EYE/` | Gaze CSV files |
+| `HEADSET/raw/head_motion/` | Head motion data |
+| `TIME/` | Cross-modal timestamp CSVs |
+| `SCREEN/` | Screen recordings |
+
+Dry-run (show what would be downloaded without writing anything):
 
 ```bash
-python make_dataset_sense_seek.py download --output-dir data/raw --dry-run
+python make_dataset_sense_seek.py download --output-dir data/raw --eeg-only --dry-run
 ```
 
 ### 2 — Build the HDF5 dataset
@@ -126,6 +170,13 @@ dataset/
 ### 3 — Download + process in one shot
 
 ```bash
+# EEG only (recommended)
+python make_dataset_sense_seek.py all \
+    --raw-dir    data/raw \
+    --output-dir dataset/ \
+    --eeg-only
+
+# Full multimodal
 python make_dataset_sense_seek.py all \
     --raw-dir    data/raw \
     --output-dir dataset/
@@ -141,6 +192,7 @@ python make_dataset_sense_seek.py all \
 | `--output-dir`    | all               | `dataset`   | Output directory for HDF5 + report |
 | `--window-sec`    | `process`, `all`  | `5.0`       | Window length in seconds           |
 | `--window-stride` | `process`, `all`  | `2.5`       | Stride in seconds (overlap = 1 − stride/window) |
+| `--eeg-only`      | `download`, `all` | off         | Download only EEG + event files (skip wristband, eye-tracker, screen) |
 | `--dry-run`       | `download`, `all` | off         | Show S3 operations without writing |
 | `--list-only`     | `download`        | off         | List all S3 objects and exit        |
 
@@ -203,10 +255,3 @@ pandas
 openpyxl   # for reading task_materials.xlsx
 awscli     # for S3 download
 ```
-
-Install:
-
-```bash
-pip install mne h5py numpy pandas openpyxl
-```
-
