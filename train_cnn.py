@@ -128,10 +128,12 @@ class EEGMLP(nn.Module):
     Architecture
     ------------
     The (C, T) signal is flattened to a 1-D vector and passed through
-    three fully-connected blocks (Linear → BatchNorm1d → ReLU → Dropout)
-    with decreasing width, followed by a linear classifier head.
+    three fully-connected blocks.  Each block contains TWO Linear layers
+    at the same width (Linear → BN → ReLU → Linear → BN → ReLU → Dropout)
+    before the width is halved, giving the network more capacity to learn
+    within each resolution.
 
-      Flatten  →  1024  →  512  →  256  →  n_classes
+      Flatten  →  [1024 × 2]  →  [512 × 2]  →  [256 × 2]  →  n_classes
     """
 
     def __init__(self, n_channels: int = 60, n_times: int = 1280,
@@ -142,20 +144,29 @@ class EEGMLP(nn.Module):
         self.net = nn.Sequential(
             nn.Flatten(),
 
-            # Block 1
+            # Block 1  (two layers at width 1024)
             nn.Linear(in_features, 1024),
+            nn.BatchNorm1d(1024),
+            nn.ReLU(),
+            nn.Linear(1024, 1024),
             nn.BatchNorm1d(1024),
             nn.ReLU(),
             nn.Dropout(dropout),
 
-            # Block 2
+            # Block 2  (two layers at width 512)
             nn.Linear(1024, 512),
+            nn.BatchNorm1d(512),
+            nn.ReLU(),
+            nn.Linear(512, 512),
             nn.BatchNorm1d(512),
             nn.ReLU(),
             nn.Dropout(dropout),
 
-            # Block 3
+            # Block 3  (two layers at width 256)
             nn.Linear(512, 256),
+            nn.BatchNorm1d(256),
+            nn.ReLU(),
+            nn.Linear(256, 256),
             nn.BatchNorm1d(256),
             nn.ReLU(),
             nn.Dropout(dropout * 0.5),
