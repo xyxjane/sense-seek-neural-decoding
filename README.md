@@ -75,11 +75,13 @@ Applied per participant inside `load_and_preprocess_eeg()`:
 
 1. Load EDF with MNE
 2. Pick EEG channels; fall back to all channels if none typed as EEG
-3. Common-average reference (CAR)
-4. Bandpass filter  1–40 Hz  (IIR Butterworth)
-5. Resample to 256 Hz
-6. Slice into sliding windows (no cross-boundary padding)
-7. Per-participant, per-channel z-score normalisation over all windows
+3. Strip non-EEG channels (`BATTERY`, `BATTERY_PERCENT`, `COUNTER`, `INTERPOLATED`, `MARKER_HARDWARE`, `MarkerIndex`, `MarkerType`, `MarkerValueInt`, `OR_TIME_STAMP_ms`, `OR_TIME_STAMP_s`, `TIME_STAMP_ms`, `TIME_STAMP_s`)
+4. Retain only channels present in **every** participant (intersection → 60 channels)
+5. Common-average reference (CAR)
+6. Bandpass filter  1–40 Hz  (IIR Butterworth)
+7. Resample to 256 Hz
+8. Slice into sliding windows (no cross-boundary padding)
+9. Per-participant, per-channel z-score normalisation over all windows
 
 ---
 

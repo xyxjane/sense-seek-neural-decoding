@@ -72,6 +72,16 @@ BANDPASS         = (1.0, 40.0)  # Hz – standard cognitive EEG band
 ACC_SFREQ_TARGET = 32           # Hz – Empatica E4 accelerometer
 EDA_SFREQ_TARGET = 4            # Hz – Empatica E4 electrodermal activity
 
+# Non-EEG channels present in EMOTIV EDFs that must be excluded before training
+NON_EEG_CHANNELS: frozenset = frozenset({
+    # Device / system metadata
+    'BATTERY', 'BATTERY_PERCENT', 'COUNTER', 'INTERPOLATED',
+    # Markers / events
+    'MARKER_HARDWARE', 'MarkerIndex', 'MarkerType', 'MarkerValueInt',
+    # Timestamps
+    'OR_TIME_STAMP_ms', 'OR_TIME_STAMP_s', 'TIME_STAMP_ms', 'TIME_STAMP_s',
+})
+
 # Six cognitive activity stages – label mapping preserved from original notebook
 STAGES       = ['IN', 'QF', 'LISTEN', 'READ', 'TYPE', 'SPEAK']
 STAGE_TO_INT = {s: i for i, s in enumerate(STAGES)}
@@ -457,6 +467,7 @@ def _collect_common_channels(edf_files: list, events_dir: Path) -> list:
         picks = mne.pick_types(info, eeg=True, meg=False,
                                stim=False, exclude='bads')
         names = [info['ch_names'][p] for p in picks] if len(picks) else info['ch_names']
+        names = [n for n in names if n not in NON_EEG_CHANNELS]
         ch_sets.append(set(names))
 
     if not ch_sets:
