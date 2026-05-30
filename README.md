@@ -308,19 +308,6 @@ ds = SenseSeekDataset('dataset/dataset_<timestamp>.h5', pids=['PA11', 'PA12'])
 loader = DataLoader(ds, batch_size=32, shuffle=True, num_workers=2)
 ```
 
-### Model architecture (MLP)
-
-```
-Flatten(60×1280 = 76800)
-→ Linear(76800, 1024) → BN → ReLU → Linear(1024, 1024) → BN → ReLU → Dropout(0.5)
-→ Linear(1024,   512) → BN → ReLU → Linear(512,   512) → BN → ReLU → Dropout(0.5)
-→ Linear(512,    256) → BN → ReLU → Linear(256,   256) → BN → ReLU → Dropout(0.25)
-→ Linear(256, 6)
-```
-
-Class-imbalance is handled via **class-weighted `CrossEntropyLoss`** computed from
-training-set label counts. Learning rate follows a **cosine annealing** schedule.
-
 ---
 
 ## Project structure
