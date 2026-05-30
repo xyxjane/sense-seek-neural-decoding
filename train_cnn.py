@@ -2,7 +2,7 @@
 """
 train_cnn.py
 
-Train a basic 1D-CNN on the SenseSeek EEG dataset for 6-class
+Train a basic MLP on the SenseSeek EEG dataset for 6-class
 cognitive stage classification.
 
 Subject-based splits are defined in subject_splits.csv:
@@ -118,111 +118,54 @@ def build_loaders(h5_path: str, splits_csv: str, batch_size: int,
 
 # ── model ─────────────────────────────────────────────────────────────────────
 
-class EEGConvNet(nn.Module):
+class EEGMLP(nn.Module):
     """
-    Basic 1D-CNN for EEG classification.
+    MLP for EEG classification.
 
     Input:  (B, C, T)  –  B = batch, C = EEG channels, T = time samples
     Output: (B, n_classes)  –  raw logits
 
     Architecture
     ------------
-    Three Conv1d blocks (temporal feature extraction) with BatchNorm,
-    ReLU, and increasing channel depth, followed by global average
-    pooling and a linear classifier.
+    The (C, T) signal is flattened to a 1-D vector and passed through
+    three fully-connected blocks (Linear → BatchNorm1d → ReLU → Dropout)
+    with decreasing width, followed by a linear classifier head.
+
+      Flatten  →  1024  →  512  →  256  →  n_classes
     """
 
     def __init__(self, n_channels: int = 60, n_times: int = 1280,
                  n_classes: int = 6, dropout: float = 0.5):
         super().__init__()
+        in_features = n_channels * n_times
 
-        self.encoder = nn.Sequential(
-            # Block 1 – coarse temporal features
-            nn.Conv1d(n_channels, 64,  kernel_size=32, stride=4, padding=14),
-            nn.BatchNorm1d(64),
+        self.net = nn.Sequential(
+            nn.Flatten(),
+
+            # Block 1
+            nn.Linear(in_features, 1024),
+            nn.BatchNorm1d(1024),
             nn.ReLU(),
-            nn.Dropout(dropout * 0.5),
+            nn.Dropout(dropout),
 
-            # Block 2 – mid-range features
-            nn.Conv1d(64,  128, kernel_size=16, stride=2, padding=7),
-            nn.BatchNorm1d(128),
+            # Block 2
+            nn.Linear(1024, 512),
+            nn.BatchNorm1d(512),
             nn.ReLU(),
-            nn.Dropout(dropout * 0.5),
+            nn.Dropout(dropout),
 
-            # Block 3 – fine features
-            nn.Conv1d(128, 256, kernel_size=8,  stride=2, padding=3),
+            # Block 3
+            nn.Linear(512, 256),
             nn.BatchNorm1d(256),
             nn.ReLU(),
+            nn.Dropout(dropout * 0.5),
 
-            # Global average pool → (B, 256)
-            nn.AdaptiveAvgPool1d(1),
-            nn.Flatten(),
-        )
-
-        self.classifier = nn.Sequential(
-            nn.Dropout(dropout),
+            # Classifier head
             nn.Linear(256, n_classes),
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.classifier(self.encoder(x))
-
-
-class EEGConvNet2D(nn.Module):
-    """
-    2D-CNN for EEG classification.
-
-    The (B, C, T) EEG tensor is treated as a single-channel 2D image of
-    shape (B, 1, C, T), where the height axis is EEG channels and the
-    width axis is time.  This lets the network learn joint spatial
-    (channel) and temporal patterns simultaneously.
-
-    Architecture
-    ------------
-    Three Conv2d blocks with kernels that span both the channel and time
-    axes, followed by global average pooling and a linear classifier.
-
-      Block 1 – large temporal / narrow channel kernel  (1, 32)
-      Block 2 – square spatial-temporal kernel          (3, 16)
-      Block 3 – fine integration kernel                 (3,  8)
-    """
-
-    def __init__(self, n_channels: int = 60, n_times: int = 1280,
-                 n_classes: int = 6, dropout: float = 0.5):
-        super().__init__()
-
-        self.encoder = nn.Sequential(
-            # Input: (B, 1, C, T)
-            # Block 1 – broad temporal, narrow channel
-            nn.Conv2d(1,   32,  kernel_size=(1,  32), stride=(1, 4), padding=(0, 14)),
-            nn.BatchNorm2d(32),
-            nn.ReLU(),
-            nn.Dropout2d(dropout * 0.25),
-
-            # Block 2 – spatial + temporal
-            nn.Conv2d(32,  64,  kernel_size=(3,  16), stride=(1, 2), padding=(1,  7)),
-            nn.BatchNorm2d(64),
-            nn.ReLU(),
-            nn.Dropout2d(dropout * 0.25),
-
-            # Block 3 – fine features
-            nn.Conv2d(64,  128, kernel_size=(3,   8), stride=(1, 2), padding=(1,  3)),
-            nn.BatchNorm2d(128),
-            nn.ReLU(),
-
-            # Global average pool over (C', T') -> (B, 128)
-            nn.AdaptiveAvgPool2d((1, 1)),
-            nn.Flatten(),
-        )
-
-        self.classifier = nn.Sequential(
-            nn.Dropout(dropout),
-            nn.Linear(128, n_classes),
-        )
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # x: (B, C, T)  ->  unsqueeze to (B, 1, C, T)
-        return self.classifier(self.encoder(x.unsqueeze(1)))
+        return self.net(x)
 
 
 # ── training utilities ────────────────────────────────────────────────────────
@@ -300,8 +243,8 @@ def main() -> None:
     parser.add_argument('--lr',          type=float, default=1e-3)
     parser.add_argument('--weight-decay',type=float, default=1e-4)
     parser.add_argument('--dropout',     type=float, default=0.5)
-    parser.add_argument('--model',       default='cnn1d', choices=['cnn1d', 'cnn2d'],
-                        help='Model architecture: cnn1d (default) or cnn2d.')
+    parser.add_argument('--model',       default='mlp', choices=['mlp'],
+                        help='Model architecture: mlp (default).')
     parser.add_argument('--num-workers', type=int,   default=4,
                         help='DataLoader worker processes (0 = main process).')
     parser.add_argument('--output-dir',  default='runs/exp1',
@@ -337,12 +280,8 @@ def main() -> None:
     print(f"  Input shape : ({n_channels}, {n_times})   Classes: {n_classes} → {stage_names}")
 
     # ── model ─────────────────────────────────────────────────────────────────
-    if args.model == 'cnn2d':
-        model = EEGConvNet2D(n_channels=n_channels, n_times=n_times,
-                             n_classes=n_classes, dropout=args.dropout).to(device)
-    else:
-        model = EEGConvNet(n_channels=n_channels, n_times=n_times,
-                           n_classes=n_classes, dropout=args.dropout).to(device)
+    model = EEGMLP(n_channels=n_channels, n_times=n_times,
+                   n_classes=n_classes, dropout=args.dropout).to(device)
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"\nModel : {args.model}  ({n_params:,} parameters)")
 
