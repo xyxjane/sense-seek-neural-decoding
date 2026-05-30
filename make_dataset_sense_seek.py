@@ -121,21 +121,12 @@ def list_s3_bucket(s3_uri: str) -> str:
 
 def _check_aws_cli() -> None:
     """Raise a clear error if the AWS CLI is not installed or not executable."""
-    import shutil
-    _INSTALL = (
-        "  Linux  : sudo apt-get install awscli  (or: pip install awscli)\n"
-        "  macOS  : brew install awscli           (or: pip install awscli)\n"
-        "  Windows: winget install Amazon.AWSCLI  (or: pip install awscli)"
-    )
-    if shutil.which("aws") is None:
-        raise RuntimeError(f"AWS CLI not found. Install it first:\n{_INSTALL}")
-    # Smoke-test: actually execute aws to catch broken installs / bad shebangs.
     try:
         subprocess.run(["aws", "--version"], capture_output=True, check=True)
     except (FileNotFoundError, subprocess.CalledProcessError) as exc:
         raise RuntimeError(
-            f"AWS CLI found but failed to execute ({exc}).\n"
-            f"Try reinstalling:\n{_INSTALL}"
+            f"AWS CLI not found or not working ({exc}).\n"
+            "Install it with:  pip install awscli"
         ) from exc
 
 
