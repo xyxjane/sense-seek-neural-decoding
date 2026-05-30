@@ -25,9 +25,9 @@ eye-tracking, wristband (Empatica E4), and screen recording.
 | Metric            | Value                        |
 |-------------------|------------------------------|
 | Total windows     | 8,236                        |
-| EEG channels      | 60 (common across all participants) |
+| EEG channels      | 48 (common across all participants) |
 | Samples / window  | 1,280  (256 Hz × 5 s)        |
-| Signals shape     | (8236, 60, 1280)  float32    |
+| Signals shape     | (8236, 48, 1280)  float32    |
 | Participants      | 19  (PA5 skipped — no event PKL) |
 | Topics            | 12  (TREC IDs 314–743)       |
 
@@ -59,7 +59,7 @@ Attributes:
 
 | Dataset    | Attribute       | Content                              |
 |------------|-----------------|--------------------------------------|
-| `/signals` | `eeg_channels`  | list of 60 channel names             |
+| `/signals` | `eeg_channels`  | list of 48 channel names             |
 | `/signals` | `eeg_sfreq`     | 256 (Hz)                             |
 | `/signals` | `window_sec`    | window length used at build time     |
 | `/signals` | `stage_names`   | `['IN','QF','LISTEN','READ','TYPE','SPEAK']` |
@@ -76,7 +76,7 @@ Applied per participant inside `load_and_preprocess_eeg()`:
 1. Load EDF with MNE
 2. Pick EEG channels; fall back to all channels if none typed as EEG
 3. Strip non-EEG channels (`BATTERY`, `BATTERY_PERCENT`, `COUNTER`, `INTERPOLATED`, `MARKER_HARDWARE`, `MarkerIndex`, `MarkerType`, `MarkerValueInt`, `OR_TIME_STAMP_ms`, `OR_TIME_STAMP_s`, `TIME_STAMP_ms`, `TIME_STAMP_s`)
-4. Retain only channels present in **every** participant (intersection → 60 channels)
+4. Retain only channels present in **every** participant (intersection → 48 channels)
 5. Common-average reference (CAR)
 6. Bandpass filter  1–40 Hz  (IIR Butterworth)
 7. Resample to 256 Hz
@@ -213,7 +213,7 @@ with h5py.File('dataset/dataset_20260529_213343.h5', 'r') as f:
     topic_names = [t.decode() for t in f['topic_id'].attrs['topic_names']]
 
     # single window
-    x = f['signals'][0]          # (60, 1280)  float32
+    x = f['signals'][0]          # (48, 1280)  float32
     y = f['labels'][0]           # int  0–5
     pid       = f['pid'][0].decode()              # e.g. 'PA11'
     topic     = topic_names[f['topic_id'][0]]     # e.g. 'Antarctica exploration'
@@ -222,7 +222,7 @@ with h5py.File('dataset/dataset_20260529_213343.h5', 'r') as f:
     # all windows for one stage
     labels = f['labels'][:]
     read_mask = labels == 3      # READ
-    X_read = f['signals'][read_mask]   # (N_read, 60, 1280)
+    X_read = f['signals'][read_mask]   # (N_read, 48, 1280)
 
     # all windows for one participant
     pids = np.array([p.decode() for p in f['pid'][:]])
@@ -297,9 +297,9 @@ train_loader, val_loader, test_loader = build_loaders(
     num_workers = 4,
 )
 
-# Each batch: x (B, 60, 1280) float32,  y (B,) int64
+# Each batch: x (B, 48, 1280) float32,  y (B,) int64
 for x, y in train_loader:
-    print(x.shape, y.shape)   # torch.Size([64, 60, 1280])  torch.Size([64])
+    print(x.shape, y.shape)   # torch.Size([64, 48, 1280])  torch.Size([64])
     break
 
 # Or build a loader for a custom list of participants
