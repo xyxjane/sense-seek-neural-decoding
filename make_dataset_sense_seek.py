@@ -242,7 +242,19 @@ def clean_eeg_with_ica_iclabel(
         print("  [warn] Too few EEG channels for ICA; skipping ICA/ICLabel.")
         return raw_clean
 
-    n_components = min(n_eeg_ch - 1, 20)
+    # ICLabel requires channel positions; try standard 10-20 montage.
+    # Channels not in the montage are silently ignored (on_missing='ignore').
+    try:
+        montage = mne.channels.make_standard_montage("standard_1020")
+        raw_clean.set_montage(montage, on_missing="ignore", verbose=False)
+        if raw_clean.get_montage() is None:
+            raise RuntimeError("no channel positions after setting montage")
+    except Exception as exc:
+        print(f"  [warn] Could not set montage for ICA/ICLabel ({exc}); skipping.")
+        return raw_clean
+
+    # n_components must be < n_channels and ≤ 19 to keep variance ratio stable
+    n_components = min(n_eeg_ch - 1, 19)
 
     ica = ICA(
         n_components=n_components,
@@ -251,9 +263,15 @@ def clean_eeg_with_ica_iclabel(
         random_state=random_state,
         max_iter="auto",
     )
-    ica.fit(raw_clean, verbose=False)
 
-    ic_labels = label_components(raw_clean, ica, method="iclabel")
+    # ICLabel was designed for data filtered 1–100 Hz; fit and label on a
+    # separate copy at that range, then apply the result to the original.
+    raw_ica = raw_clean.copy().filter(
+        l_freq=1.0, h_freq=100.0, method="iir", verbose=False
+    )
+    ica.fit(raw_ica, verbose=False)
+
+    ic_labels = label_components(raw_ica, ica, method="iclabel")
     labels_ic  = ic_labels["labels"]
     probs      = ic_labels["y_pred_proba"]
 
@@ -272,7 +290,7 @@ def clean_eeg_with_ica_iclabel(
         return raw_clean
 
     ica.exclude = exclude
-    raw_clean   = ica.apply(raw_clean, verbose=False)
+    ica.apply(raw_clean, verbose=False)   # apply in-place to the 1-40 Hz data
     print(f"  Removed ICA components: {exclude}")
     return raw_clean
 
