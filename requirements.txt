@@ -4,4 +4,3 @@ numpy
 pandas
 openpyxl
 awscli
-mne-icalabel  # optional: ICA + ICLabel artefact removal (--ica flag)
