@@ -119,6 +119,18 @@ def list_s3_bucket(s3_uri: str) -> str:
     return result.stdout
 
 
+def _check_aws_cli() -> None:
+    """Raise a clear error if the AWS CLI is not installed."""
+    import shutil
+    if shutil.which("aws") is None:
+        raise RuntimeError(
+            "AWS CLI not found. Install it first:\n"
+            "  Linux : sudo apt-get install awscli  (or: pip install awscli)\n"
+            "  macOS : brew install awscli           (or: pip install awscli)\n"
+            "  Windows: winget install Amazon.AWSCLI (or: pip install awscli)"
+        )
+
+
 def _sync_prefix(prefix: str, local_root: Path, dry_run: bool = False) -> None:
     src = f"{BUCKET}/{prefix}"
     dst = str(local_root / prefix)
@@ -142,6 +154,7 @@ def _copy_file(key: str, local_root: Path, dry_run: bool = False) -> None:
 
 def download_dataset(local_root: Path, dry_run: bool = False) -> None:
     """Download all raw Sense-Seek data from s3://sense-seek-dataset/ into local_root."""
+    _check_aws_cli()
     local_root = Path(local_root)
     local_root.mkdir(parents=True, exist_ok=True)
 
