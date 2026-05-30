@@ -229,18 +229,115 @@ with h5py.File('dataset/dataset_20260529_213343.h5', 'r') as f:
 
 ---
 
+---
+
+## Training a model
+
+### Subject-based splits
+
+Participants are pre-assigned to non-overlapping train / val / test splits in
+`subject_splits.csv` (no window from the same participant appears in two splits):
+
+| Split | PIDs | Windows (approx.) |
+|-------|------|-------------------|
+| train | PA6, PA8, PA9, PA11, PA12, PA13, PA17, PA18, PA19, PA20, PA21, PA22, PA33 | ~5,700 |
+| val   | PA26, PA27, PA29 | ~1,300 |
+| test  | PA30, PA31, PA32 | ~1,200 |
+
+### Quick start
+
+```bash
+python train_with_dataloader.py \
+    --h5          dataset/dataset_<timestamp>.h5 \
+    --splits      subject_splits.csv \
+    --epochs      50 \
+    --batch-size  64 \
+    --lr          1e-3 \
+    --output-dir  runs/exp1
+```
+
+### CLI parameters
+
+| Argument        | Default              | Description |
+|-----------------|----------------------|-------------|
+| `--h5`          | *(required)*         | Path to the HDF5 dataset file |
+| `--splits`      | `subject_splits.csv` | CSV with `pid,split` columns |
+| `--epochs`      | `50`                 | Number of training epochs |
+| `--batch-size`  | `64`                 | Mini-batch size |
+| `--lr`          | `1e-3`               | Adam learning rate |
+| `--weight-decay`| `1e-4`               | Adam weight decay |
+| `--dropout`     | `0.5`                | Dropout probability |
+| `--model`       | `mlp`                | Architecture — currently `mlp` |
+| `--num-workers` | `4`                  | DataLoader worker processes (use `0` on Windows) |
+| `--output-dir`  | `runs/exp1`          | Where to write checkpoints and logs |
+| `--device`      | `auto`               | `auto` \| `cpu` \| `cuda` \| `mps` |
+
+### Outputs
+
+```
+runs/exp1/
+  best_model.pt      ← best checkpoint (keyed on val accuracy)
+  training_log.csv   ← epoch-by-epoch train/val loss and accuracy
+  test_results.txt   ← per-class accuracy + confusion matrix on test set
+```
+
+### Using the DataLoader in your own script
+
+```python
+from train_with_dataloader import SenseSeekDataset, build_loaders
+import h5py
+
+# Build subject-split loaders
+train_loader, val_loader, test_loader = build_loaders(
+    h5_path    = 'dataset/dataset_<timestamp>.h5',
+    splits_csv = 'subject_splits.csv',
+    batch_size = 64,
+    num_workers = 4,
+)
+
+# Each batch: x (B, 60, 1280) float32,  y (B,) int64
+for x, y in train_loader:
+    print(x.shape, y.shape)   # torch.Size([64, 60, 1280])  torch.Size([64])
+    break
+
+# Or build a loader for a custom list of participants
+from train_with_dataloader import SenseSeekDataset
+from torch.utils.data import DataLoader
+
+ds = SenseSeekDataset('dataset/dataset_<timestamp>.h5', pids=['PA11', 'PA12'])
+loader = DataLoader(ds, batch_size=32, shuffle=True, num_workers=2)
+```
+
+### Model architecture (MLP)
+
+```
+Flatten(60×1280 = 76800)
+→ Linear(76800, 1024) → BN → ReLU → Linear(1024, 1024) → BN → ReLU → Dropout(0.5)
+→ Linear(1024,   512) → BN → ReLU → Linear(512,   512) → BN → ReLU → Dropout(0.5)
+→ Linear(512,    256) → BN → ReLU → Linear(256,   256) → BN → ReLU → Dropout(0.25)
+→ Linear(256, 6)
+```
+
+Class-imbalance is handled via **class-weighted `CrossEntropyLoss`** computed from
+training-set label counts. Learning rate follows a **cosine annealing** schedule.
+
+---
+
 ## Project structure
 
 ```
-make_dataset_sense_seek.py   — pipeline: S3 download + EEG preprocessing + HDF5 builder
-test.py                      — dry-run / unit test for single participant (PA11)
-data/raw/                    — downloaded raw data (gitignored)
-  HEADSET/raw/EEG/           — EDF recordings
-  HEADSET/processed/events/  — stage timing PKL files
-  WRISTBAND/raw/{ACC,EDA}/   — Empatica E4 wristband signals
-  EYETRACKER/raw/EYE/        — gaze CSV files
-  task_materials.xlsx         — TREC topic ID → topic name mapping
-dataset/                     — output HDF5 files (gitignored)
+make_dataset_sense_seek.py    — pipeline: S3 download + EEG preprocessing + HDF5 builder
+train_with_dataloader.py      — subject-split DataLoader + MLP training script
+subject_splits.csv            — train/val/test participant assignments
+test.py                       — dry-run / unit test for single participant (PA11)
+data/raw/                     — downloaded raw data (gitignored)
+  HEADSET/raw/EEG/            — EDF recordings
+  HEADSET/processed/events/   — stage timing PKL files
+  WRISTBAND/raw/{ACC,EDA}/    — Empatica E4 wristband signals
+  EYETRACKER/raw/EYE/         — gaze CSV files
+  task_materials.xlsx          — TREC topic ID → topic name mapping
+dataset/                      — output HDF5 files (gitignored)
+runs/                         — training outputs (gitignored)
 ```
 
 ---
@@ -254,4 +351,5 @@ numpy
 pandas
 openpyxl   # for reading task_materials.xlsx
 awscli     # for S3 download
+torch      # for train_with_dataloader.py
 ```
